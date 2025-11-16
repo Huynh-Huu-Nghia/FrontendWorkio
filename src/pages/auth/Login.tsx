@@ -1,18 +1,20 @@
 import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { EnvelopeIcon, LockClosedIcon } from "@heroicons/react/24/outline";
+import { Link } from "react-router-dom";
+import { EnvelopeIcon, LockClosedIcon, EyeIcon, EyeSlashIcon } from "@heroicons/react/24/outline";
 import { FcGoogle } from "react-icons/fc";
 import { FaFacebook, FaLinkedin } from "react-icons/fa";
 import { z } from "zod";
-import { Toaster, toast } from "react-hot-toast";
+import { Toaster } from "react-hot-toast";
 
 import workioLogo from "../../assets/networking.png";
 import AuthBrandingPanel from "../../components/auth/AuthBrandingPanel";
+import { useLoginViewModel } from "../../viewmodels/auth/useLoginViewModel";
 
 // Định nghĩa schema validation cho form đăng nhập
 const loginSchema = z.object({
   email: z.string().email("Email không hợp lệ"),
   password: z.string().min(1, "Vui lòng nhập mật khẩu"),
+  role: z.enum(["admin", "recruiter", "candidate"]),
 });
 
 // Trích xuất kiểu TypeScript từ schema
@@ -23,24 +25,25 @@ const LoginPage = () => {
   const [formData, setFormData] = useState<LoginFormData>({
     email: "",
     password: "",
+    role: "candidate",
   });
+  const [showPassword, setShowPassword] = useState(false);
 
   // Quản lý state lỗi validation
-  const [errors, setErrors] = useState<Partial<LoginFormData>>({});
-  // Quản lý trạng thái loading (khi submit)
-  const [isLoading, setIsLoading] = useState(false);
-  const navigate = useNavigate();
+  const [errors, setErrors] = useState<Partial<Record<keyof LoginFormData, string>>>({});
+  const { isLoading, error, login } = useLoginViewModel();
 
   // Xử lý thay đổi trên các trường input
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { id, value } = e.target;
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { id, value, name } = e.target as HTMLInputElement & { name?: string };
+    const key = (name || id) as keyof LoginFormData;
     setFormData((prev) => ({
       ...prev,
-      [id]: value,
+      [key]: value,
     }));
     // Xóa lỗi validation khi người dùng bắt đầu gõ lại
-    if (errors[id as keyof LoginFormData]) {
-      setErrors((prev) => ({ ...prev, [id]: undefined }));
+    if (errors[key as keyof LoginFormData]) {
+      setErrors((prev) => ({ ...prev, [key]: undefined }));
     }
   };
 
@@ -54,7 +57,7 @@ const LoginPage = () => {
 
     // Nếu validation thất bại, hiển thị lỗi
     if (!validationResult.success) {
-      const newErrors: Partial<LoginFormData> = {};
+      const newErrors: Partial<Record<keyof LoginFormData, string>> = {};
       validationResult.error.issues.forEach((issue) => {
         newErrors[issue.path[0] as keyof LoginFormData] = issue.message;
       });
@@ -62,26 +65,7 @@ const LoginPage = () => {
       return; // Dừng thực thi
     }
 
-    // Bắt đầu trạng thái loading
-    setIsLoading(true);
-
-    try {
-      // *** TODO: Gọi API Đăng nhập thật của bạn ở đây ***
-      // const response = await loginAPI(validationResult.data);
-
-      // Giả lập API
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      toast.success("Đăng nhập thành công!");
-
-      // Chuyển hướng về trang chủ
-      setTimeout(() => {
-        navigate("/home"); // Điều hướng về "/home"
-      }, 1500);
-    } catch (error) {
-      toast.error("Email hoặc mật khẩu không đúng.");
-      setIsLoading(false); // Dừng loading khi lỗi để thử lại
-    }
+    await login({ ...validationResult.data });
   };
 
   // Định nghĩa class CSS cho input để tái sử dụng
@@ -157,16 +141,61 @@ const LoginPage = () => {
                   />
                 </div>
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   id="password"
                   placeholder="••••••••"
-                  className={errors.password ? inputErrorClass : inputClass}
+                  className={`${errors.password ? inputErrorClass : inputClass} pr-10`}
                   value={formData.password}
                   onChange={handleChange}
                   disabled={isLoading}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700"
+                  aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                  title={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                >
+                  {showPassword ? (
+                    <EyeSlashIcon className="h-5 w-5" />
+                  ) : (
+                    <EyeIcon className="h-5 w-5" />
+                  )}
+                </button>
                 {errors.password && (
                   <p className="text-xs text-red-600 mt-1">{errors.password}</p>
+                )}
+                {!errors.password && error && (
+                  <p className="text-xs text-red-600 mt-1">{error}</p>
+                )}
+              </div>
+
+              {/* Vai trò */}
+              <div className="relative">
+                <label className="absolute -top-2 left-2 inline-block bg-white px-1 text-xs font-medium text-gray-900">
+                  Vai trò
+                </label>
+                <div className="grid grid-cols-3 gap-2 pt-4">
+                  {([
+                    { label: 'Admin', value: 'admin' },
+                    { label: 'Recruiter', value: 'recruiter' },
+                    { label: 'Candidate', value: 'candidate' },
+                  ] as const).map((opt) => (
+                    <label key={opt.value} className={`flex items-center justify-center border rounded-md py-2 cursor-pointer text-sm ${formData.role === opt.value ? 'border-amber-500 text-amber-700' : 'border-gray-300 text-gray-700'}`}>
+                      <input
+                        type="radio"
+                        name="role"
+                        value={opt.value}
+                        checked={formData.role === opt.value}
+                        onChange={handleChange}
+                        className="hidden"
+                      />
+                      {opt.label}
+                    </label>
+                  ))}
+                </div>
+                {errors.role && (
+                  <p className="text-xs text-red-600 mt-1">{errors.role}</p>
                 )}
               </div>
 
